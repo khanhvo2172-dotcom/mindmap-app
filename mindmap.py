@@ -196,7 +196,13 @@ def build_html(mind_data, meta, height=760):
   <input id="mm-search" class="mm-search" type="text"
          placeholder="Search node, press Enter…"
          onkeydown="if(event.key==='Enter'){{event.preventDefault();mmSearch(this.value);}}"/>
-  <span class="mm-hint">Click branch = expand · drag a node to rearrange (resets on refresh) · drag empty space = pan · scroll = zoom · dbl-click keyword = open · right-click = copy</span>
+  <span class="mm-legend">
+    <span class="mm-tip"><b>Click</b> expand</span>
+    <span class="mm-tip"><b>Drag</b> rearrange</span>
+    <span class="mm-tip"><b>Scroll</b> zoom</span>
+    <span class="mm-tip"><b>Dbl-click</b> open</span>
+    <span class="mm-tip"><b>Right-click</b> copy</span>
+  </span>
 </div>
 <div id="jsmind_container"></div>
 <div id="mm-ctx"></div>
@@ -225,7 +231,13 @@ def build_html(mind_data, meta, height=760):
   }}
   .mm-search:focus {{ border-color:#D97757; box-shadow:0 0 0 3px rgba(217,119,87,.15); }}
   .mm-search::placeholder {{ color:#A8A69E; }}
-  .mm-hint {{ color:#908E85; font-size:11.5px; margin-left:auto; }}
+  .mm-legend {{ margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }}
+  .mm-tip {{
+    font-size:11px; color:#8C8A81; background:#F3F1EA;
+    border:1px solid #EBE8DE; border-radius:20px; padding:3px 10px;
+    white-space:nowrap;
+  }}
+  .mm-tip b {{ color:#6B6A65; font-weight:600; }}
   #jsmind_container {{
     width:100%; height:{height - 60}px;
     border:1px solid #E7E4DA; border-radius:14px;
@@ -297,6 +309,10 @@ def build_html(mind_data, meta, height=760):
     // Editable is on only to allow drag-to-rearrange; block inline text editing.
     jm.begin_edit = function() {{ return false; }};
 
+    // Suppress Streamlit's "c" (clear cache) / "r" (rerun) hotkeys so that
+    // Ctrl+C copies normally and nothing pops the clear-cache dialog.
+    suppressStreamlitHotkeys();
+
     // Recolor / tooltips, and re-apply whenever nodes are (re)rendered.
     applyMeta();
     var container = document.getElementById('jsmind_container');
@@ -364,6 +380,29 @@ def build_html(mind_data, meta, height=760):
       hideCtx();
       mmZoom(e.deltaY < 0 ? 1 : -1);
     }}, {{ passive:false }});
+  }}
+
+  function suppressStreamlitHotkeys() {{
+    // Streamlit registers a global keydown for single-key "c"/"r" shortcuts.
+    // Intercept on the parent window in capture phase (fires before Streamlit)
+    // and stop it when the user isn't typing in a field. We never preventDefault,
+    // so Ctrl/Cmd+C still copies the selection.
+    function handler(e) {{
+      var t = e.target;
+      var tag = (t && t.tagName ? t.tagName : '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || (t && t.isContentEditable)) return;
+      var k = (e.key || '').toLowerCase();
+      if (k === 'c' || k === 'r') e.stopImmediatePropagation();
+    }}
+    var wins = [];
+    try {{ if (window.parent && window.parent !== window) wins.push(window.parent); }} catch (e) {{}}
+    try {{ if (window.top && window.top !== window && wins.indexOf(window.top) < 0) wins.push(window.top); }} catch (e) {{}}
+    wins.forEach(function(w) {{
+      try {{
+        w.addEventListener('keydown', handler, true);
+        w.document.addEventListener('keydown', handler, true);
+      }} catch (e) {{}}
+    }});
   }}
 
   var CTX_URL = null;
