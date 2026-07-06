@@ -196,9 +196,11 @@ def build_html(mind_data, meta, height=760):
   <input id="mm-search" class="mm-search" type="text"
          placeholder="Search node, press Enter…"
          onkeydown="if(event.key==='Enter'){{event.preventDefault();mmSearch(this.value);}}"/>
-  <span class="mm-hint">Drag empty space to pan · scroll to zoom · double-click a keyword to open its URL</span>
+  <span class="mm-hint">Click a branch to expand/collapse · drag to pan · scroll to zoom · double-click keyword = open · right-click keyword = copy link</span>
 </div>
 <div id="jsmind_container"></div>
+<div id="mm-ctx"></div>
+<div id="mm-toast"></div>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.8.6/style/jsmind.css"/>
 <script src="https://cdn.jsdelivr.net/npm/jsmind@0.8.6/es6/jsmind.js"></script>
@@ -239,6 +241,25 @@ def build_html(mind_data, meta, height=760):
   jmnode.selected {{ box-shadow:0 0 0 3px rgba(37,99,235,.35) !important; }}
   jmnode.mm-match {{ box-shadow:0 0 0 3px #f59e0b !important; }}
   jmexpander {{ font-weight:700; }}
+  #mm-ctx {{
+    position:fixed; z-index:9999; display:none; background:#fff;
+    border:1px solid #e2e6ea; border-radius:9px; padding:4px; min-width:150px;
+    box-shadow:0 8px 28px rgba(16,24,40,.20);
+    font-family:'Segoe UI',Roboto,sans-serif;
+  }}
+  #mm-ctx .mm-ctx-item {{
+    padding:7px 12px; font-size:13px; color:#1f2328; border-radius:6px;
+    cursor:pointer; white-space:nowrap; user-select:none;
+  }}
+  #mm-ctx .mm-ctx-item:hover {{ background:#f3f4f6; }}
+  #mm-toast {{
+    position:fixed; z-index:10000; bottom:16px; left:50%;
+    transform:translateX(-50%); background:#111827; color:#fff;
+    padding:8px 15px; border-radius:9px; font-size:13px; opacity:0;
+    transition:opacity .18s; pointer-events:none;
+    font-family:'Segoe UI',Roboto,sans-serif;
+  }}
+  #mm-toast.show {{ opacity:.96; }}
 </style>
 
 <script>
@@ -278,6 +299,17 @@ def build_html(mind_data, meta, height=760):
     new MutationObserver(function() {{ applyMeta(); }})
         .observe(container, {{ childList:true, subtree:true }});
 
+    // Single-click a branch node (theme/cluster/gap) -> toggle expand/collapse.
+    container.addEventListener('click', function(e) {{
+      if (e.target.closest && e.target.closest('jmexpander')) return; // let +/- work
+      hideCtx();
+      var n = e.target.closest ? e.target.closest('jmnode') : null;
+      if (!n) return;
+      var id = n.getAttribute('nodeid');
+      var node = jm.get_node(id);
+      if (node && node.children && node.children.length) jm.toggle_node(id);
+    }});
+
     // Double-click a node with a URL -> open it.
     container.addEventListener('dblclick', function(e) {{
       var n = e.target.closest ? e.target.closest('jmnode') : null;
@@ -286,11 +318,74 @@ def build_html(mind_data, meta, height=760):
       if (m && m.url) window.open(m.url, '_blank');
     }});
 
+    // Right-click a keyword with a URL -> context menu (Copy link / Open link).
+    var ctx = document.getElementById('mm-ctx');
+    ctx.innerHTML =
+      '<div class="mm-ctx-item" data-act="copy">📋 Copy link</div>' +
+      '<div class="mm-ctx-item" data-act="open">↗ Open link</div>';
+    container.addEventListener('contextmenu', function(e) {{
+      var n = e.target.closest ? e.target.closest('jmnode') : null;
+      var m = n ? META[n.getAttribute('nodeid')] : null;
+      if (!m || !m.url) {{ hideCtx(); return; }}  // default menu elsewhere
+      e.preventDefault();
+      CTX_URL = m.url;
+      ctx.style.left = Math.min(e.clientX, window.innerWidth - 170) + 'px';
+      ctx.style.top = e.clientY + 'px';
+      ctx.style.display = 'block';
+    }});
+    ctx.addEventListener('click', function(e) {{
+      var act = e.target.getAttribute('data-act');
+      if (act === 'copy' && CTX_URL) {{ copyText(CTX_URL); toast('Link copied'); }}
+      else if (act === 'open' && CTX_URL) {{ window.open(CTX_URL, '_blank'); }}
+      hideCtx();
+    }});
+    document.addEventListener('click', function(e) {{
+      if (!e.target.closest || !e.target.closest('#mm-ctx')) hideCtx();
+    }});
+    document.addEventListener('scroll', hideCtx, true);
+    document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') hideCtx(); }});
+
     // Wheel to zoom.
     container.addEventListener('wheel', function(e) {{
       e.preventDefault();
+      hideCtx();
       mmZoom(e.deltaY < 0 ? 1 : -1);
     }}, {{ passive:false }});
+  }}
+
+  var CTX_URL = null;
+  function hideCtx() {{
+    var c = document.getElementById('mm-ctx');
+    if (c) c.style.display = 'none';
+  }}
+
+  function copyText(text) {{
+    try {{
+      if (navigator.clipboard && navigator.clipboard.writeText) {{
+        navigator.clipboard.writeText(text).catch(function() {{ fallbackCopy(text); }});
+        return;
+      }}
+    }} catch (e) {{}}
+    fallbackCopy(text);
+  }}
+  function fallbackCopy(text) {{
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try {{ document.execCommand('copy'); }} catch (e) {{}}
+    document.body.removeChild(ta);
+  }}
+  var TOAST_TIMER = null;
+  function toast(msg) {{
+    var t = document.getElementById('mm-toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(TOAST_TIMER);
+    TOAST_TIMER = setTimeout(function() {{ t.classList.remove('show'); }}, 1400);
   }}
 
   function mmZoom(dir) {{
