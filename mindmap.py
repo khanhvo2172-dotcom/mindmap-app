@@ -16,8 +16,16 @@ COL_URL = "URLs"
 COL_VOLUME = "Volume"
 COL_TITLE = "Page Title"
 COL_TYPE = "Content Type"
+COL_NOTES = "Notes"
 
 UNGROUPED = "(Ungrouped)"
+
+# Keywords whose Notes cell equals this get bucketed under a collapsed node.
+GAP_NOTE = "suggested keyword gap"
+GAP_LABEL = "Suggested Keyword Gap"
+GAP_BG = "#ffedd5"       # amber-100
+GAP_FG = "#c2410c"       # amber-700
+GAP_LEAF_BG = "#fff7ed"  # amber-50
 
 # Distinct-ish colors for the 12 (or more) themes — XMind vibe.
 THEME_PALETTE = [
@@ -66,6 +74,7 @@ def build_mind(df):
 
     theme_nodes = {}   # theme -> node dict
     cluster_nodes = {}  # (theme, sx) -> node dict
+    gap_nodes = {}     # cluster id -> "Suggested Keyword Gap" bucket node
     ti = 0
     ci = 0
     ki = 0
@@ -81,6 +90,7 @@ def build_mind(df):
         url = _cell(row, COL_URL)
         vol = _cell(row, COL_VOLUME)
         ctype = _cell(row, COL_TYPE)
+        is_gap = _cell(row, COL_NOTES).lower() == GAP_NOTE
 
         # Skip fully empty rows.
         if not any([_cell(row, COL_THEME), _cell(row, COL_SX), kw, title, url]):
@@ -110,11 +120,27 @@ def build_mind(df):
             ci += 1
         cnode = cluster_nodes[ckey]
 
+        # ---- Optional: "Suggested Keyword Gap" bucket inside the cluster ----
+        if is_gap:
+            gkey = cnode["id"]
+            if gkey not in gap_nodes:
+                gid = f"{cnode['id']}_gap"
+                gbucket = {"id": gid, "topic": GAP_LABEL,
+                           "expanded": False, "children": []}
+                gap_nodes[gkey] = gbucket
+                cnode["children"].append(gbucket)
+                meta[gid] = {"bg": GAP_BG, "fg": GAP_FG}
+            leaf_parent = gap_nodes[gkey]["children"]
+            leaf_bg = GAP_LEAF_BG
+        else:
+            leaf_parent = cnode["children"]
+            leaf_bg = _lighten(tcolor, 0.90)
+
         # ---- Level 3: keyword leaf ----
         label = kw or title or _slug_label(url) or "(Untitled)"
         lid = f"k{ki}"
         ki += 1
-        cnode["children"].append({"id": lid, "topic": label, "children": []})
+        leaf_parent.append({"id": lid, "topic": label, "children": []})
         n_leaves += 1
 
         tip_parts = []
@@ -129,19 +155,29 @@ def build_mind(df):
         if url:
             tip_parts.append(f"URL: {url}")
             tip_parts.append("(double-click to open)")
-        m = {"bg": _lighten(tcolor, 0.90), "fg": "#1e293b"}
+        m = {"bg": leaf_bg, "fg": "#1e293b"}
         if tip_parts:
             m["tip"] = "\n".join(tip_parts)
         if url:
             m["url"] = url
         meta[lid] = m
 
+    # Label each gap bucket with its count and push it to the end of the cluster.
+    n_gap_leaves = 0
+    for cid, gbucket in gap_nodes.items():
+        gbucket["topic"] = f"{GAP_LABEL} ({len(gbucket['children'])})"
+        n_gap_leaves += len(gbucket["children"])
+        cnode = next(c for c in cluster_nodes.values() if c["id"] == cid)
+        cnode["children"].remove(gbucket)
+        cnode["children"].append(gbucket)
+
     # Balance the tree: alternate top-level themes left/right.
     n_themes = len(root["children"])
     for i, node in enumerate(root["children"]):
         node["direction"] = "right" if i < (n_themes + 1) // 2 else "left"
 
-    stats = {"themes": n_themes, "clusters": ci, "leaves": n_leaves}
+    stats = {"themes": n_themes, "clusters": ci, "leaves": n_leaves,
+             "gap": n_gap_leaves}
     return root, meta, stats
 
 
@@ -158,7 +194,8 @@ def build_html(mind_data, meta, height=760):
   <button class="mm-btn" onclick="mmZoom(-1)">🔍 −</button>
   <button class="mm-btn" onclick="mmReset()">⟲ Reset</button>
   <input id="mm-search" class="mm-search" type="text"
-         placeholder="Search node…" oninput="mmSearch(this.value)"/>
+         placeholder="Search node, press Enter…"
+         onkeydown="if(event.key==='Enter'){{event.preventDefault();mmSearch(this.value);}}"/>
   <span class="mm-hint">Drag empty space to pan · scroll to zoom · double-click a keyword to open its URL</span>
 </div>
 <div id="jsmind_container"></div>
