@@ -95,8 +95,57 @@ button[data-testid="stBaseButton-primary"]:hover { background: var(--c-accent-ho
 
 /* alerts a touch warmer */
 [data-testid="stAlert"] { border-radius: 12px; }
+
+/* ---- Stat chips ---- */
+.cs-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-chip {
+  display: flex; align-items: baseline; gap: 6px;
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: 11px; padding: 7px 13px;
+}
+.cs-chip .cs-n {
+  font-family: 'Tiempos', Georgia, serif; font-size: 18px; font-weight: 600;
+  color: var(--c-accent); line-height: 1;
+}
+.cs-chip .cs-l {
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--c-muted);
+}
+.cs-chip.cs-gap .cs-n { color: #C4720E; }
+.cs-live {
+  display: flex; align-items: center; gap: 7px; margin-left: 4px;
+  color: var(--c-muted); font-size: 12.5px;
+}
+.cs-live .cs-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #3E9B6B;
+  animation: cs-pulse 2.2s infinite;
+}
+@keyframes cs-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(62,155,107,.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(62,155,107,0); }
+  100% { box-shadow: 0 0 0 0 rgba(62,155,107,0); }
+}
 </style>
 """
+
+
+def _stats_bar(stats):
+    chips = [("Themes", stats["themes"], ""),
+             ("Clusters", stats["clusters"], ""),
+             ("Keywords", stats["leaves"], "")]
+    gap = stats.get("gap", 0)
+    if gap:
+        chips.append(("Gap ideas", gap, "cs-gap"))
+    chip_html = "".join(
+        f'<div class="cs-chip {cls}"><span class="cs-n">{v}</span>'
+        f'<span class="cs-l">{label}</span></div>'
+        for label, v, cls in chips
+    )
+    return (
+        '<div class="cs-stats">' + chip_html +
+        f'<div class="cs-live"><span class="cs-dot"></span>'
+        f'Live · {WORKSHEET} · refreshes every {CACHE_TTL}s</div></div>'
+    )
 
 
 def _render_header():
@@ -138,22 +187,14 @@ def main():
 
     mind, meta, stats = mindmap.build_mind(df)
 
-    row = st.columns([1.2, 1.2, 6.6], vertical_alignment="center")
+    row = st.columns([1.15, 8.85], vertical_alignment="center")
     with row[0]:
         if st.button("🔄 Refresh", use_container_width=True,
                      help="Re-sync from Google Sheets now"):
             load_dataframe.clear()
             st.rerun()
     with row[1]:
-        st.metric("Keywords", stats["leaves"])
-    with row[2]:
-        gap = stats.get("gap", 0)
-        gap_txt = f" (incl. **{gap}** keyword-gap suggestions)" if gap else ""
-        st.caption(
-            f"**{stats['themes']}** themes · **{stats['clusters']}** clusters · "
-            f"**{stats['leaves']}** keywords{gap_txt} — live from *{WORKSHEET}* "
-            f"(auto-refresh ≤ {CACHE_TTL}s)."
-        )
+        st.markdown(_stats_bar(stats), unsafe_allow_html=True)
 
     components.html(mindmap.build_html(mind, meta, height=780),
                     height=800, scrolling=False)
