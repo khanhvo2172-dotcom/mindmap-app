@@ -2,11 +2,26 @@
 
 No Streamlit / network imports here so it can be unit-tested standalone.
 """
+import hashlib
 import html
 import json
 from urllib.parse import urlparse
 
 ROOT_LABEL = "Content Strategy"
+
+
+def _sid(prefix, key):
+    """Stable content-derived id (survives Sheet re-ordering)."""
+    return prefix + hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+
+
+def _uniq(base, used):
+    sid, n = base, 2
+    while sid in used:
+        sid = f"{base}_{n}"
+        n += 1
+    used.add(sid)
+    return sid
 
 # Column names in the "Internal Links" tab
 COL_THEME = "Themes"
@@ -75,9 +90,8 @@ def build_mind(df):
     theme_nodes = {}   # theme -> node dict
     cluster_nodes = {}  # (theme, sx) -> node dict
     gap_nodes = {}     # cluster id -> "Suggested Keyword Gap" bucket node
+    used_ids = {root_id}
     ti = 0
-    ci = 0
-    ki = 0
     n_leaves = 0
 
     records = df.to_dict("records") if hasattr(df, "to_dict") else df
@@ -98,7 +112,7 @@ def build_mind(df):
 
         # ---- Level 1: Theme ----
         if theme not in theme_nodes:
-            tid = f"t{ti}"
+            tid = _uniq(_sid("t_", theme), used_ids)
             color = THEME_PALETTE[ti % len(THEME_PALETTE)]
             node = {"id": tid, "topic": theme, "expanded": True, "children": []}
             theme_nodes[theme] = node
@@ -111,20 +125,19 @@ def build_mind(df):
         # ---- Level 2: cluster (sx) ----
         ckey = (theme, sx)
         if ckey not in cluster_nodes:
-            cid = f"{tnode['id']}_c{ci}"
+            cid = _uniq(_sid("c_", theme + "||" + sx), used_ids)
             # keep keyword leaves collapsed until clicked
             node = {"id": cid, "topic": sx, "expanded": False, "children": []}
             cluster_nodes[ckey] = node
             tnode["children"].append(node)
             meta[cid] = {"bg": _lighten(tcolor, 0.80), "fg": tcolor}
-            ci += 1
         cnode = cluster_nodes[ckey]
 
         # ---- Optional: "Suggested Keyword Gap" bucket inside the cluster ----
         if is_gap:
             gkey = cnode["id"]
             if gkey not in gap_nodes:
-                gid = f"{cnode['id']}_gap"
+                gid = _uniq(cnode["id"] + "_gap", used_ids)
                 gbucket = {"id": gid, "topic": GAP_LABEL,
                            "expanded": False, "children": []}
                 gap_nodes[gkey] = gbucket
@@ -138,8 +151,7 @@ def build_mind(df):
 
         # ---- Level 3: keyword leaf ----
         label = kw or title or _slug_label(url) or "(Untitled)"
-        lid = f"k{ki}"
-        ki += 1
+        lid = _uniq(_sid("k_", theme + "||" + sx + "||" + label + "||" + url), used_ids)
         leaf_parent.append({"id": lid, "topic": label, "children": []})
         n_leaves += 1
 
@@ -176,8 +188,8 @@ def build_mind(df):
     for i, node in enumerate(root["children"]):
         node["direction"] = "right" if i < (n_themes + 1) // 2 else "left"
 
-    stats = {"themes": n_themes, "clusters": ci, "leaves": n_leaves,
-             "gap": n_gap_leaves}
+    stats = {"themes": n_themes, "clusters": len(cluster_nodes),
+             "leaves": n_leaves, "gap": n_gap_leaves}
     return root, meta, stats
 
 
@@ -192,7 +204,10 @@ def build_html(mind_data, meta, height=760):
   <span class="mm-sep"></span>
   <button class="mm-btn" onclick="mmZoom(1)">🔍 +</button>
   <button class="mm-btn" onclick="mmZoom(-1)">🔍 −</button>
-  <button class="mm-btn" onclick="mmReset()">⟲ Reset</button>
+  <button class="mm-btn" onclick="mmReset()">⟲ Fit</button>
+  <span class="mm-sep"></span>
+  <button class="mm-btn mm-btn-reset" onclick="mmResetLayout()"
+          title="Discard your saved arrangement and rebuild from the Sheet">↺ Reset layout</button>
   <input id="mm-search" class="mm-search" type="text"
          placeholder="Search node, press Enter…"
          onkeydown="if(event.key==='Enter'){{event.preventDefault();mmSearch(this.value);}}"/>
@@ -224,6 +239,7 @@ def build_html(mind_data, meta, height=760):
     transition:all .14s ease;
   }}
   .mm-btn:hover {{ background:#FBEFE9; border-color:#D97757; color:#C15F3C; }}
+  .mm-btn-reset {{ color:#908E85; }}
   .mm-sep {{ width:1px; height:20px; background:#E7E4DA; margin:0 4px; }}
   .mm-search {{
     border:1px solid #E7E4DA; border-radius:9px; padding:6px 11px;
@@ -279,7 +295,11 @@ def build_html(mind_data, meta, height=760):
   var MIND = {{ meta:{{name:"content-strategy", author:"", version:"1.0"}},
                format:"node_tree", data:{data_json} }};
   var META = {meta_json};
+  var CANON = JSON.parse(JSON.stringify(MIND.data));  // pristine Sheet layout
+  var LS_KEY = 'mm-layout-v1';
   var jm = null;
+  var SAVE_TIMER = null;
+  var READY = false;
 
   function applyMeta() {{
     document.querySelectorAll('jmnode').forEach(function(el) {{
@@ -305,9 +325,20 @@ def build_html(mind_data, meta, height=760):
       layout: {{ hspace:28, vspace:14, pspace:13 }}
     }};
     jm = new jsMind(options);
-    jm.show(MIND);
     // Editable is on only to allow drag-to-rearrange; block inline text editing.
     jm.begin_edit = function() {{ return false; }};
+
+    // Restore a previously saved arrangement (merged with the latest Sheet data).
+    var saved = loadLayout();
+    MIND.data = saved ? reconcile(CANON, saved) : JSON.parse(JSON.stringify(CANON));
+    jm.show(MIND);
+    if (saved) setTimeout(function() {{ toast('Restored your saved layout'); }}, 400);
+
+    // Save whenever the structure changes (drag / move).
+    jm.add_event_listener(function(type, data) {{
+      if (READY && type === jsMind.event_type.edit) scheduleSave();
+    }});
+    READY = true;
 
     // Suppress Streamlit's "c" (clear cache) / "r" (rerun) hotkeys so that
     // Ctrl+C copies normally and nothing pops the clear-cache dialog.
@@ -321,13 +352,13 @@ def build_html(mind_data, meta, height=760):
 
     // Single-click a branch node (theme/cluster/gap) -> toggle expand/collapse.
     container.addEventListener('click', function(e) {{
-      if (e.target.closest && e.target.closest('jmexpander')) return; // let +/- work
+      if (e.target.closest && e.target.closest('jmexpander')) {{ scheduleSave(); return; }}
       hideCtx();
       var n = e.target.closest ? e.target.closest('jmnode') : null;
       if (!n) return;
       var id = n.getAttribute('nodeid');
       var node = jm.get_node(id);
-      if (node && node.children && node.children.length) jm.toggle_node(id);
+      if (node && node.children && node.children.length) {{ jm.toggle_node(id); scheduleSave(); }}
     }});
 
     // Double-click a node with a URL -> open it.
@@ -446,8 +477,86 @@ def build_html(mind_data, meta, height=760):
     try {{ dir > 0 ? jm.view.zoomIn() : jm.view.zoomOut(); }} catch (e) {{}}
   }}
   function mmReset() {{ if (jm && jm.view && jm.view.set_zoom) jm.view.set_zoom(1); }}
-  function mmExpandAll() {{ if (jm) jm.expand_all(); }}
-  function mmCollapseAll() {{ if (jm) {{ jm.collapse_all(); jm.expand_node('root'); }} }}
+  function mmExpandAll() {{ if (jm) {{ jm.expand_all(); scheduleSave(); }} }}
+  function mmCollapseAll() {{ if (jm) {{ jm.collapse_all(); jm.expand_node('root'); scheduleSave(); }} }}
+
+  // ---- Layout persistence (localStorage) ----
+  function loadLayout() {{
+    try {{ var s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : null; }}
+    catch (e) {{ return null; }}
+  }}
+  function saveLayoutNow() {{
+    if (!jm) return;
+    try {{
+      var d = jm.get_data('node_tree').data;
+      localStorage.setItem(LS_KEY, JSON.stringify(d));
+    }} catch (e) {{}}
+  }}
+  function scheduleSave() {{
+    if (!READY) return;
+    clearTimeout(SAVE_TIMER);
+    SAVE_TIMER = setTimeout(saveLayoutNow, 500);
+  }}
+  function mmResetLayout() {{
+    try {{ localStorage.removeItem(LS_KEY); }} catch (e) {{}}
+    MIND.data = JSON.parse(JSON.stringify(CANON));
+    READY = false;
+    jm.show(MIND);
+    READY = true;
+    toast('Layout reset to the Sheet');
+  }}
+
+  // Merge a saved arrangement with the latest Sheet data:
+  // the fresh tree decides WHICH nodes exist; the saved tree decides
+  // each node's parent + order (and expanded state) where still valid.
+  function reconcile(fresh, saved) {{
+    var freshNodes = {{}}, canonParent = {{}}, canonOrder = {{}};
+    (function walk(n, parent) {{
+      freshNodes[n.id] = n;
+      canonParent[n.id] = parent ? parent.id : null;
+      (n.children || []).forEach(function(c, i) {{ canonOrder[c.id] = i; }});
+      (n.children || []).forEach(function(c) {{ walk(c, n); }});
+    }})(fresh, null);
+
+    var savedParent = {{}}, savedOrder = {{}}, savedExpanded = {{}};
+    (function walk(n, parent) {{
+      if (parent) savedParent[n.id] = parent.id;
+      if (n.expanded !== undefined) savedExpanded[n.id] = n.expanded;
+      (n.children || []).forEach(function(c, i) {{ savedOrder[c.id] = i; }});
+      (n.children || []).forEach(function(c) {{ walk(c, n); }});
+    }})(saved, null);
+
+    var kids = {{}};
+    Object.keys(freshNodes).forEach(function(id) {{ kids[id] = []; }});
+    Object.keys(freshNodes).forEach(function(id) {{
+      if (id === fresh.id) return;
+      var sp = savedParent[id];
+      var parent = (sp && freshNodes[sp]) ? sp : canonParent[id];
+      if (parent == null || !kids[parent]) parent = fresh.id;
+      kids[parent].push(id);
+    }});
+    Object.keys(kids).forEach(function(p) {{
+      kids[p].sort(function(a, b) {{
+        var sa = savedOrder[a], sb = savedOrder[b];
+        var aH = sa !== undefined, bH = sb !== undefined;
+        if (aH && bH) return sa - sb;         // both known: saved order
+        if (aH) return -1;                    // saved nodes before new ones
+        if (bH) return 1;
+        return (canonOrder[a] || 0) - (canonOrder[b] || 0);  // both new: Sheet order
+      }});
+    }});
+
+    function build(id) {{
+      var base = freshNodes[id];
+      var node = {{ id: id, topic: base.topic,
+                   children: (kids[id] || []).map(build) }};
+      if (base.direction) node.direction = base.direction;
+      var exp = (savedExpanded[id] !== undefined) ? savedExpanded[id] : base.expanded;
+      if (exp !== undefined) node.expanded = exp;
+      return node;
+    }}
+    return build(fresh.id);
+  }}
 
   function mmSearch(q) {{
     q = (q || '').trim().toLowerCase();
