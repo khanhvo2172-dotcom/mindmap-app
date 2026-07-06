@@ -84,9 +84,11 @@ def main():
     with top[2]:
         st.metric("Keywords", stats["leaves"])
     with top[3]:
+        gap = stats.get("gap", 0)
+        gap_txt = f" (incl. **{gap}** keyword-gap suggestions)" if gap else ""
         st.caption(
             f"**{stats['themes']}** themes · **{stats['clusters']}** clusters · "
-            f"**{stats['leaves']}** keywords — live from *{WORKSHEET}* "
+            f"**{stats['leaves']}** keywords{gap_txt} — live from *{WORKSHEET}* "
             f"(auto-refresh ≤ {CACHE_TTL}s)."
         )
 
