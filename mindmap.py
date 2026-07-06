@@ -196,7 +196,7 @@ def build_html(mind_data, meta, height=760):
   <input id="mm-search" class="mm-search" type="text"
          placeholder="Search node, press Enter…"
          onkeydown="if(event.key==='Enter'){{event.preventDefault();mmSearch(this.value);}}"/>
-  <span class="mm-hint">Click a branch to expand/collapse · drag to pan · scroll to zoom · double-click keyword = open · right-click keyword = copy link</span>
+  <span class="mm-hint">Click branch = expand · drag a node to rearrange (resets on refresh) · drag empty space = pan · scroll = zoom · dbl-click keyword = open · right-click = copy</span>
 </div>
 <div id="jsmind_container"></div>
 <div id="mm-ctx"></div>
@@ -283,8 +283,9 @@ def build_html(mind_data, meta, height=760):
     var options = {{
       container: 'jsmind_container',
       theme: 'greensea',
-      editable: false,
+      editable: true,               // required for node dragging (rearrange)
       mode: 'full',
+      shortcut: {{ enable: false }},  // no keyboard delete/edit
       view: {{ engine:'canvas', hmargin:80, vmargin:40, line_width:2,
                line_color:'#c3cad3', draggable:true,
                zoom:{{ min:0.3, max:2.2, step:0.08 }} }},
@@ -292,6 +293,8 @@ def build_html(mind_data, meta, height=760):
     }};
     jm = new jsMind(options);
     jm.show(MIND);
+    // Editable is on only to allow drag-to-rearrange; block inline text editing.
+    jm.begin_edit = function() {{ return false; }};
 
     // Recolor / tooltips, and re-apply whenever nodes are (re)rendered.
     applyMeta();
@@ -318,24 +321,33 @@ def build_html(mind_data, meta, height=760):
       if (m && m.url) window.open(m.url, '_blank');
     }});
 
-    // Right-click a keyword with a URL -> context menu (Copy link / Open link).
+    // Right-click a keyword leaf -> context menu.
     var ctx = document.getElementById('mm-ctx');
-    ctx.innerHTML =
-      '<div class="mm-ctx-item" data-act="copy">📋 Copy link</div>' +
-      '<div class="mm-ctx-item" data-act="open">↗ Open link</div>';
     container.addEventListener('contextmenu', function(e) {{
       var n = e.target.closest ? e.target.closest('jmnode') : null;
-      var m = n ? META[n.getAttribute('nodeid')] : null;
-      if (!m || !m.url) {{ hideCtx(); return; }}  // default menu elsewhere
+      if (!n) {{ hideCtx(); return; }}
+      var id = n.getAttribute('nodeid');
+      var node = jm.get_node(id);
+      var isLeaf = node && (!node.children || node.children.length === 0) && id !== 'root';
+      if (!isLeaf) {{ hideCtx(); return; }}  // branches keep the native menu
       e.preventDefault();
-      CTX_URL = m.url;
-      ctx.style.left = Math.min(e.clientX, window.innerWidth - 170) + 'px';
+      var m = META[id] || {{}};
+      CTX_URL = m.url || null;
+      CTX_TEXT = node.topic || '';
+      var items = '<div class="mm-ctx-item" data-act="copytext">📝 Copy keyword text</div>';
+      if (CTX_URL) {{
+        items += '<div class="mm-ctx-item" data-act="copy">📋 Copy link</div>' +
+                 '<div class="mm-ctx-item" data-act="open">↗ Open link</div>';
+      }}
+      ctx.innerHTML = items;
+      ctx.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
       ctx.style.top = e.clientY + 'px';
       ctx.style.display = 'block';
     }});
     ctx.addEventListener('click', function(e) {{
       var act = e.target.getAttribute('data-act');
-      if (act === 'copy' && CTX_URL) {{ copyText(CTX_URL); toast('Link copied'); }}
+      if (act === 'copytext' && CTX_TEXT) {{ copyText(CTX_TEXT); toast('Keyword copied'); }}
+      else if (act === 'copy' && CTX_URL) {{ copyText(CTX_URL); toast('Link copied'); }}
       else if (act === 'open' && CTX_URL) {{ window.open(CTX_URL, '_blank'); }}
       hideCtx();
     }});
@@ -354,6 +366,7 @@ def build_html(mind_data, meta, height=760):
   }}
 
   var CTX_URL = null;
+  var CTX_TEXT = null;
   function hideCtx() {{
     var c = document.getElementById('mm-ctx');
     if (c) c.style.display = 'none';
