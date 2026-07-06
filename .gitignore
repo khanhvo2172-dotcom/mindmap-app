@@ -1,0 +1,9 @@
+# Never commit real secrets or service-account keys
+.streamlit/secrets.toml
+*service_account*.json
+*.key
+.env
+
+__pycache__/
+*.pyc
+.DS_Store
