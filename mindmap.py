@@ -33,7 +33,7 @@ THEME_PALETTE = [
     "#0891b2", "#65a30d", "#c026d3", "#ea580c", "#4f46e5", "#059669",
     "#e11d48", "#0284c7", "#9333ea", "#16a34a",
 ]
-ROOT_COLOR = "#111827"
+ROOT_COLOR = "#262625"
 
 
 def _lighten(hexc, f):
@@ -213,49 +213,50 @@ def build_html(mind_data, meta, height=760):
     padding:8px 4px; font-family:'Segoe UI',Roboto,sans-serif;
   }}
   .mm-btn {{
-    border:1px solid #d0d7de; background:#fff; color:#1f2328;
-    border-radius:7px; padding:5px 10px; font-size:13px; cursor:pointer;
-    transition:background .12s;
+    border:1px solid #E7E4DA; background:#fff; color:#262625;
+    border-radius:9px; padding:6px 11px; font-size:13px; cursor:pointer;
+    transition:all .14s ease;
   }}
-  .mm-btn:hover {{ background:#f3f4f6; }}
-  .mm-sep {{ width:1px; height:20px; background:#e5e7eb; margin:0 4px; }}
+  .mm-btn:hover {{ background:#FBEFE9; border-color:#D97757; color:#C15F3C; }}
+  .mm-sep {{ width:1px; height:20px; background:#E7E4DA; margin:0 4px; }}
   .mm-search {{
-    border:1px solid #d0d7de; border-radius:7px; padding:5px 10px;
-    font-size:13px; width:170px; outline:none;
+    border:1px solid #E7E4DA; border-radius:9px; padding:6px 11px;
+    font-size:13px; width:190px; outline:none; color:#262625; background:#fff;
   }}
-  .mm-search:focus {{ border-color:#2563eb; }}
-  .mm-hint {{ color:#8a919a; font-size:11.5px; margin-left:auto; }}
+  .mm-search:focus {{ border-color:#D97757; box-shadow:0 0 0 3px rgba(217,119,87,.15); }}
+  .mm-search::placeholder {{ color:#A8A69E; }}
+  .mm-hint {{ color:#908E85; font-size:11.5px; margin-left:auto; }}
   #jsmind_container {{
     width:100%; height:{height - 60}px;
-    border:1px solid #e5e7eb; border-radius:12px;
+    border:1px solid #E7E4DA; border-radius:14px;
     background:
-      radial-gradient(circle, #e9edf2 1px, transparent 1px) 0 0/22px 22px,
-      #fbfcfe;
+      radial-gradient(circle, #E7E3D7 1px, transparent 1px) 0 0/22px 22px,
+      #FAF9F4;
   }}
   jmnode {{
     border-radius:9px !important;
     font-family:'Segoe UI',Roboto,sans-serif !important;
-    box-shadow:0 1px 2px rgba(16,24,40,.10);
+    box-shadow:0 1px 2px rgba(38,38,37,.10);
     padding:6px 12px !important;
   }}
-  jmnode.selected {{ box-shadow:0 0 0 3px rgba(37,99,235,.35) !important; }}
-  jmnode.mm-match {{ box-shadow:0 0 0 3px #f59e0b !important; }}
+  jmnode.selected {{ box-shadow:0 0 0 3px rgba(217,119,87,.40) !important; }}
+  jmnode.mm-match {{ box-shadow:0 0 0 3px #E8A838 !important; }}
   jmexpander {{ font-weight:700; }}
   #mm-ctx {{
     position:fixed; z-index:9999; display:none; background:#fff;
-    border:1px solid #e2e6ea; border-radius:9px; padding:4px; min-width:150px;
-    box-shadow:0 8px 28px rgba(16,24,40,.20);
+    border:1px solid #E7E4DA; border-radius:10px; padding:4px; min-width:158px;
+    box-shadow:0 10px 30px rgba(38,38,37,.16);
     font-family:'Segoe UI',Roboto,sans-serif;
   }}
   #mm-ctx .mm-ctx-item {{
-    padding:7px 12px; font-size:13px; color:#1f2328; border-radius:6px;
+    padding:7px 12px; font-size:13px; color:#262625; border-radius:7px;
     cursor:pointer; white-space:nowrap; user-select:none;
   }}
-  #mm-ctx .mm-ctx-item:hover {{ background:#f3f4f6; }}
+  #mm-ctx .mm-ctx-item:hover {{ background:#FBEFE9; color:#C15F3C; }}
   #mm-toast {{
     position:fixed; z-index:10000; bottom:16px; left:50%;
-    transform:translateX(-50%); background:#111827; color:#fff;
-    padding:8px 15px; border-radius:9px; font-size:13px; opacity:0;
+    transform:translateX(-50%); background:#262625; color:#fff;
+    padding:8px 15px; border-radius:10px; font-size:13px; opacity:0;
     transition:opacity .18s; pointer-events:none;
     font-family:'Segoe UI',Roboto,sans-serif;
   }}
@@ -287,7 +288,7 @@ def build_html(mind_data, meta, height=760):
       mode: 'full',
       shortcut: {{ enable: false }},  // no keyboard delete/edit
       view: {{ engine:'canvas', hmargin:80, vmargin:40, line_width:2,
-               line_color:'#c3cad3', draggable:true,
+               line_color:'#CFC9BA', draggable:true,
                zoom:{{ min:0.3, max:2.2, step:0.08 }} }},
       layout: {{ hspace:28, vspace:14, pspace:13 }}
     }};
