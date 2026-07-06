@@ -45,10 +45,73 @@ def _has_credentials():
         return False
 
 
+CLAUDE_CSS = """
+<style>
+:root {
+  --c-bg:#F5F4EF; --c-surface:#FFFFFF; --c-accent:#D97757;
+  --c-accent-hover:#C15F3C; --c-accent-soft:#FBEFE9;
+  --c-text:#262625; --c-muted:#73726C; --c-border:#E7E4DA;
+}
+.stApp { background: var(--c-bg); }
+[data-testid="stHeader"] { background: transparent; }
+#MainMenu, footer { visibility: hidden; }
+.block-container { padding-top: 2rem; padding-bottom: 1.2rem; max-width: 100%; }
+
+h1, h2, h3, h4, .cs-title {
+  font-family: 'Tiempos', Georgia, 'Times New Roman', serif !important;
+  color: var(--c-text); letter-spacing: -0.01em;
+}
+
+/* ---- App header ---- */
+.cs-header { margin: 0 0 6px 0; }
+.cs-title { font-size: 30px; font-weight: 600; line-height: 1.15; }
+.cs-title .cs-dot { color: var(--c-accent); }
+.cs-sub { color: var(--c-muted); font-size: 14px; margin-top: 3px; }
+
+/* ---- Buttons (target by testid; help= wraps them in a tooltip span) ---- */
+.stButton button, button[data-testid^="stBaseButton"] {
+  background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 10px;
+  font-weight: 500; transition: all .15s ease;
+}
+.stButton button:hover, button[data-testid^="stBaseButton"]:hover {
+  border-color: var(--c-accent); color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+button[data-testid="stBaseButton-primary"] {
+  background: var(--c-accent); color: #fff; border: none;
+}
+button[data-testid="stBaseButton-primary"]:hover { background: var(--c-accent-hover); color: #fff; }
+
+/* ---- Metric card ---- */
+[data-testid="stMetric"] {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: 12px; padding: 8px 16px;
+}
+[data-testid="stMetricValue"] { color: var(--c-accent); font-weight: 700; }
+[data-testid="stMetricLabel"] { color: var(--c-muted); }
+
+[data-testid="stCaptionContainer"] p { color: var(--c-muted) !important; }
+
+/* alerts a touch warmer */
+[data-testid="stAlert"] { border-radius: 12px; }
+</style>
+"""
+
+
+def _render_header():
+    st.markdown(CLAUDE_CSS, unsafe_allow_html=True)
+    st.markdown(
+        '<div class="cs-header">'
+        '<div class="cs-title">Content Strategy <span class="cs-dot">Mind Map</span></div>'
+        '<div class="cs-sub">Live from Google Sheets · Themes → Clusters → Keywords</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def main():
-    top = st.columns([1.1, 1, 1, 5])
-    with top[0]:
-        st.markdown("### 🧠 Content Strategy")
+    _render_header()
 
     if not _has_credentials():
         st.error(
@@ -57,12 +120,6 @@ def main():
             "(Manage app → Settings → Secrets). See `README.md`."
         )
         st.stop()
-
-    with top[1]:
-        if st.button("🔄 Refresh", use_container_width=True,
-                     help="Re-sync from Google Sheets now"):
-            load_dataframe.clear()
-            st.rerun()
 
     try:
         df = load_dataframe()
@@ -81,9 +138,15 @@ def main():
 
     mind, meta, stats = mindmap.build_mind(df)
 
-    with top[2]:
+    row = st.columns([1.2, 1.2, 6.6], vertical_alignment="center")
+    with row[0]:
+        if st.button("🔄 Refresh", use_container_width=True,
+                     help="Re-sync from Google Sheets now"):
+            load_dataframe.clear()
+            st.rerun()
+    with row[1]:
         st.metric("Keywords", stats["leaves"])
-    with top[3]:
+    with row[2]:
         gap = stats.get("gap", 0)
         gap_txt = f" (incl. **{gap}** keyword-gap suggestions)" if gap else ""
         st.caption(
